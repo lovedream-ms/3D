@@ -1,0 +1,7 @@
+START
+Goal_ID=CA003;Num=1;Table=1
+Goal_ID=CB002;Num=1;Table=1
+Goal_ID=CC004;Num=1;Table=1
+Goal_ID=CD001;Num=1;Table=1
+Goal_ID=W001;Num=1;Table=1
+END
