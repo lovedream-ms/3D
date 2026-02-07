@@ -45,7 +45,6 @@ if os.path.isdir(_CAM_ROOT):
     for _root, _dirs, _files in os.walk(_CAM_ROOT):
         if _root not in sys.path:
             sys.path.insert(0, _root)
-import astra_py
 
 # 避免外部环境变量干扰 Qt 插件搜索（在部分 Windows 环境下可避免加载错误）
 os.environ.pop("QT_QPA_PLATFORM_PLUGIN_PATH", None)
@@ -82,12 +81,10 @@ class MainWindow(QMainWindow):
 
         super().__init__()
         self.version = "0.0.1"
-        self.setWindowTitle(f"3D Detection-{self.version}")
-        self.setGeometry(100, 100, 984, 600)
         # 相机管理器
         self.camera_manager = camera.OpenCVCamera()
 
-        self.timer = QTimer()
+        self.updateFrameTimer = QTimer()
 
         self._warmup_done = False
         self.model_manager = ModelManager()
@@ -101,28 +98,29 @@ class MainWindow(QMainWindow):
         self._init_ui()
 
         # 相机管理器与事件接管
-        self.timer.timeout.connect(self.camera_manager.get_frame)
+        self.updateFrameTimer.timeout.connect(self.camera_manager.get_frame)
         self.cameraButton.clicked.connect(self.toggle_camera)
 
         # 保存外部传入的环境名（用于结果额外写入）
         self.cli_env_name = env_name or ""
 
-    def toggle_camera(
-        self,
-    ):
-        if self.cap.isOpen:
-            self.cap.stop()
+    def toggle_camera(self):
+        if self.camera_manager.isOpen:
+            self.camera_manager.stop()
             self.updateFrameTimer.stop()
             self.cameraButton.setText("打开相机")
-            self.imageLabel.clear()  # 清除图像显示
+            self.image_display.clear()
         else:
-            self.cap.start()
-            time.sleep(1)  # 等待相机初始化
-            self.updateFrameTimer.start(30)  # 每30毫秒更新一次帧
+            self.camera_manager.start()
+            time.sleep(1)
+            self.updateFrameTimer.start(30)
             self.cameraButton.setText("关闭相机")
 
     def _init_ui(self):
         """构建界面组件、布局，并绑定按钮信号。"""
+        self.setWindowTitle(f"3D Detection-{self.version}")
+        self.setGeometry(100, 100, 984, 600)
+
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout()
@@ -223,9 +221,9 @@ class MainWindow(QMainWindow):
             self.cameraButton.clicked.disconnect()
         except Exception:
             pass
-        self.cameraButton.clicked.connect(self.camera_manager.handle_camera_toggle)
+        self.cameraButton.clicked.connect(self.camera_manager.get_frame)
         self.Button_Round1.clicked.connect(self.start1Button)
-        self.Button_Capture.clicked.connect(self.camera_manager.captureImage)
+        self.Button_Capture.clicked.connect(self.captureImage)
         self.Button_Inference.clicked.connect(self.inferButton)
 
     def _log(self, message):
@@ -366,7 +364,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         """窗口关闭：释放相机与裁判盒连接。"""
         try:
-            self.timer.stop()
+            self.updateFrameTimer.stop()
         except Exception:
             pass
 
