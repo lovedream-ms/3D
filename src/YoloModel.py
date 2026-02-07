@@ -3,15 +3,9 @@ import sys
 import cv2
 import numpy as np
 from time import time
-from ais_bench.infer.interface import InferSession
-import torch
 
-# 确保本地仓库内的 `ultralytics/ultralytics` 包优先被导入（与 YoloModelom.py 保持一致）
-_repo_ultra_root = os.path.join(os.path.dirname(__file__), "ultralytics")
-_pkg_dir = os.path.join(_repo_ultra_root, "ultralytics")
-if os.path.isdir(_pkg_dir) and _repo_ultra_root not in sys.path:
-    sys.path.insert(0, _repo_ultra_root)
-from ultralytics.utils.ops import non_max_suppression
+import torch
+from ultralytics.utils.nms import non_max_suppression
 
 from config import (
     ZHUOZI_MODEL_PATH,
@@ -121,29 +115,42 @@ class Overall_Detector:
     """模型1：全图检测器（OM 推理，YoloModelom 同款预/后处理）"""
 
     def __init__(self, model_path: str, model_name: str = "检测器"):
-        if not os.path.isfile(model_path):
-            raise FileNotFoundError(f"{model_name}模型文件不存在: {model_path}")
+        # if not os.path.isfile(model_path):
+        #     raise FileNotFoundError(f"{model_name}模型文件不存在: {model_path}")
         ext = os.path.splitext(model_path)[1].lower()
-        if ext != ".om":
-            raise ValueError(f"{model_name}需要 OM 模型，当前: {ext}")
         self.model_path = model_path
         self.model_name = model_name
         self.classes = CLASSES
         self.conf = float(PRED_CONF_THRES)
         self.iou = float(PRED_IOU_THRES)
         self.max_det = 100
-        # 初始化 OM 推理会话
-        try:
-            self.session = InferSession(
-                device_id=int(DEVICE_ID) if DEVICE_ID is not None else 0,
-                model_path=model_path,
-            )
-        except Exception as e:
-            raise RuntimeError(f"OM 模型加载失败: {e}")
-        self.colors = (
-            np.random.uniform(0, 255, size=(max(1, len(self.classes)), 3))
-        ).astype(np.uint8)
-        print(f"✅ {self.model_name}加载成功(OM): {model_path} | device_id={DEVICE_ID}")
+        self.session = None
+        self.model = None
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # 动态导入依赖
+        if ext == ".om":
+            from ais_bench.infer.interface import InferSession
+
+            try:
+                self.session = InferSession(
+                    device_id=int(DEVICE_ID) if DEVICE_ID is not None else 0,
+                    model_path=model_path,
+                )
+            except Exception as e:
+                raise RuntimeError(f"OM 模型加载失败: {e}")
+            self.colors = (
+                np.random.uniform(0, 255, size=(max(1, len(self.classes)), 3))
+            ).astype(np.uint8)
+            print(f"✅ {model_name}加载成功(OM): {model_path} | device_id={DEVICE_ID}")
+        elif ext == ".pt":
+            from ultralytics import YOLO
+
+            self.model = YOLO(model_path, verbose=False)
+            self.colors = (
+                np.random.uniform(0, 255, size=(max(1, len(self.classes)), 3))
+            ).astype(np.uint8)
+            print(f"✅ {model_name}加载成功(PT): {model_path}")
 
     def preprocess_single(self, image):
         """与 YoloModelom.py 同款预处理：方形填充到正方形，resize 到 640x640，blobFromImage 归一化。"""
@@ -169,15 +176,27 @@ class Overall_Detector:
         return blob, scale, (h0, w0)
 
     def _postprocess(self, outputs, scale):
-        """与 YoloModelom.py 一致的后处理：ultralytics NMS，输出 numpy。"""
-        try:
-            tensor = torch.from_numpy(outputs[0][0]).unsqueeze(0)
-        except Exception:
-            tensor = (
-                torch.from_numpy(np.array(outputs)).unsqueeze(0)
-                if outputs is not None
-                else None
-            )
+        """后处理：NMS 和坐标还原。"""
+        if (
+            isinstance(outputs, tuple)
+            and len(outputs) > 0
+            and isinstance(outputs[0], torch.Tensor)
+        ):
+            tensor = outputs[0].unsqueeze(0)
+        else:
+            try:
+                tensor = (
+                    torch.from_numpy(outputs[0][0]).unsqueeze(0)
+                    if outputs and outputs[0]
+                    else None
+                )
+            except Exception:
+                tensor = (
+                    torch.from_numpy(np.array(outputs)).unsqueeze(0)
+                    if outputs is not None
+                    else None
+                )
+
         if tensor is None:
             return (
                 np.zeros((0, 4), dtype=np.float32),
@@ -247,32 +266,39 @@ class Overall_Detector:
 
 
 class Local_Detector:
-    """模型2：区域检测器（OM 推理，YoloModelom 同款预/后处理）"""
+    """模型2：区域检测器（支持 OM/PT 模型）"""
 
     def __init__(self, model_path: str, model_name: str = "检测器"):
         if not os.path.isfile(model_path):
             raise FileNotFoundError(f"{model_name}模型文件不存在: {model_path}")
         ext = os.path.splitext(model_path)[1].lower()
-        if ext != ".om":
-            raise ValueError(f"{model_name}需要 OM 模型，当前: {ext}")
         self.model_path = model_path
         self.model_name = model_name
         self.classes = CLASSES
         self.conf = float(PRED_CONF_THRES)
         self.iou = float(PRED_IOU_THRES)
         self.max_det = 100
-        # 初始化 OM 推理会话
+        self.session = None
+        self.model = None
+        # 初始化模型
         try:
-            self.session = InferSession(
-                device_id=int(DEVICE_ID) if DEVICE_ID is not None else 0,
-                model_path=model_path,
-            )
+            if ext == ".om":
+                from ais_bench.infer.interface import InferSession
+                self.session = InferSession(
+                    device_id=int(DEVICE_ID) if DEVICE_ID is not None else 0,
+                    model_path=model_path,
+                )
+            elif ext == ".pt":
+                from ultralytics import YOLO
+                self.model = YOLO(model_path, verbose=False)
+            else:
+                raise ValueError(f"{model_name}不支持的模型格式: {ext}")
         except Exception as e:
-            raise RuntimeError(f"OM 模型加载失败: {e}")
+            raise RuntimeError(f"{ext.upper()} 模型加载失败: {e}")
         self.colors = (
             np.random.uniform(0, 255, size=(max(1, len(self.classes)), 3))
         ).astype(np.uint8)
-        print(f"✅ {self.model_name}加载成功(OM): {model_path} | device_id={DEVICE_ID}")
+        print(f"✅ {self.model_name}加载成功({ext.upper()}): {model_path}")
 
     def preprocess_single(self, image):
         """与 YoloModelom.py 一致：方形填充，640x640，blobFromImage。"""
@@ -298,6 +324,11 @@ class Local_Detector:
         return blob, scale, (h0, w0)
 
     def _postprocess(self, outputs, scale):
+        """OM 模型专用后处理"""
+        return self._postprocess_om(outputs, scale)
+
+    def _postprocess_om(self, outputs, scale):
+        """OM 模型后处理"""
         try:
             tensor = torch.from_numpy(outputs[0][0]).unsqueeze(0)
         except Exception:
@@ -315,6 +346,33 @@ class Local_Detector:
 
         dets = non_max_suppression(
             tensor,
+            conf_thres=self.conf,
+            iou_thres=self.iou,
+            classes=None,
+            agnostic=False,
+            multi_label=False,
+            max_det=self.max_det,
+        )
+        if not dets or len(dets[0]) == 0:
+            return (
+                np.zeros((0, 4), dtype=np.float32),
+                np.zeros(0, dtype=np.float32),
+                np.zeros(0, dtype=np.int32),
+            )
+
+        det = dets[0].clone()
+        det[:, :4] = det[:, :4] * float(scale)
+        boxes = det[:, :4].cpu().numpy().astype(np.float32)
+        confs = det[:, 4].cpu().numpy().astype(np.float32)
+        clses = det[:, 5].cpu().numpy().astype(np.int32)
+        return boxes, confs, clses
+
+    def _postprocess_pt(self, preds, scale):
+        """PT 模型后处理"""
+        if not isinstance(preds, list):
+            preds = [preds]
+        dets = non_max_suppression(
+            preds[0].boxes.data,
             conf_thres=self.conf,
             iou_thres=self.iou,
             classes=None,
@@ -364,14 +422,23 @@ class Local_Detector:
         return _nms(boxes_xyxy, scores, cls_ids, iou_thres=float(PRED_IOU_THRES))
 
     def infer(self, img):
-        """执行推理（与 YoloModelom 同款预处理/后处理，固定 640x640）。"""
+        """执行推理（支持 OM/PT 模型）"""
         blob, scale, _ = self.preprocess_single(img)
-        outs = self.session.infer(feeds=[blob], mode="static")
-        return self._postprocess(outs, scale)
+        if self.session is not None:  # OM 模型
+            outs = self.session.infer(feeds=[blob], mode="static")
+            return self._postprocess(outs, scale)
+        elif self.model is not None:  # PT 模型
+            # 转换为 torch tensor 并推理
+            import torch
+            tensor = torch.from_numpy(blob).to(self.model.device)
+            preds = self.model(tensor)  # 直接调用模型
+            return self._postprocess_pt(preds, scale)
+        else:
+            raise RuntimeError("未加载任何模型")
 
     def is_available(self):
-        """检查模型是否可用"""
-        return self.session is not None
+        """检查模型是否可用（支持 OM/PT）"""
+        return self.session is not None or self.model is not None
 
 
 class ModelManager:

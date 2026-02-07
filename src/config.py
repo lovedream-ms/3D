@@ -2,13 +2,14 @@
 
 import os
 
-# 项目根目录
-BASE_DIR = os.path.dirname(__file__)
+# 项目根目录（src 上一层目录）
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 
 
 # ONNX 模型路径
-ZHUOZI_MODEL_PATH = os.path.join(BASE_DIR, "model", "v8_v1_overall.om")
-WUPIN_MODEL_PATH = os.path.join(BASE_DIR, "model", "v8_v2_local.om")
+# 桌子 物品
+ZHUOZI_MODEL_PATH = "./models/yolov8n.pt"
+WUPIN_MODEL_PATH = "./models/yolov8n.pt"
 
 # 推理设备与调试
 DEVICE_ID = 0
