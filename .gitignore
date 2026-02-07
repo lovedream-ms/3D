@@ -14,7 +14,6 @@ build/
 *.egg-info/
 
 data/
-test/
 models/
 
 !uv.lock

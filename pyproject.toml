@@ -6,4 +6,11 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "black>=26.1.0",
+    "opencv-python>=4.13.0.92",
 ]
+[tool.pytest.ini_options]
+markers = [
+    "hardware: 涉及物理硬件的测试",
+    "perf: 性能压力测试",
+]
+pythonpath = ["src"]
