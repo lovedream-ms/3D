@@ -237,11 +237,25 @@ class MainWindow(QMainWindow):
     def log(self, message):
         self._log(message)
 
-    def captureImage(self):
-        """抓拍当前帧，仅保存到 data/capture。"""
-        if not self.camera_active:
+    def capture_frame(self):
+        if not self.cameraManager.isOpen:
             self.log("Camera not active. Cannot capture image.")
             return
+
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        # TODO: 测试时间戳目录的性能
+        savePath = f"./results/machine/camera/{timestamp}/"
+        os.makedirs(savePath)
+
+        for key, value in videoStreams.items():
+            (
+                np.save(savePath + f"{key}Frame.npy", eval(f"self.{key}Frame"))
+                if value
+                else None
+            )
+
+        self.log(f"Image captured and saved to: {savePath}")
+
     def start_detection(self):
         iterations = 3 if roundNum == 2 else 1
 
