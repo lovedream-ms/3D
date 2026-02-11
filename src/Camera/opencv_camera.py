@@ -1,4 +1,4 @@
-from base_camera import BaseCamera
+from .base_camera import BaseCamera
 import cv2
 
 
@@ -10,10 +10,8 @@ class OpenCVCamera(BaseCamera):
 
     def start(self):
         try:
-            self.cap = cv2.VideoCapture(cv2.CAP_ANY, 0)
-            if not self.cap.isOpened():
-                raise RuntimeError("Failed to open OpenCV camera")
-            self.isOpen = True
+            self.cap = cv2.VideoCapture(0)
+            self.isOpen = self.cap.isOpened()
         except Exception as e:
             raise RuntimeError(f"Failed to start OpenCV camera: {e}")
 
@@ -29,4 +27,4 @@ class OpenCVCamera(BaseCamera):
         ret, frame = self.cap.read()
         if not ret:
             return None
-        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), None, None
