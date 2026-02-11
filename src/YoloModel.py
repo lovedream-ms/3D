@@ -1,469 +1,122 @@
-import os
-import sys
 import cv2
 import numpy as np
-from time import time
-
 import torch
+from abc import ABC, abstractmethod
+from PIL import Image, ImageDraw, ImageFont
+
+from ais_bench.infer.interface import InferSession
 from ultralytics.utils.nms import non_max_suppression
 
-from config import (
-    ZHUOZI_MODEL_PATH,
-    WUPIN_MODEL_PATH,
-    DEVICE_ID,
-    CLASSES,
-    OVERALL_IMG_HEIGHT,
-    OVERALL_IMG_WIDTH,
-    LOCAL_IMG_HEIGHT,
-    LOCAL_IMG_WIDTH,
-    PRED_CONF_THRES,
-    PRED_IOU_THRES,
-    M1_CLASS_SCORE_THRESHOLDS,
-    M2_CLASS_SCORE_THRESHOLDS,
-    INFER_DEBUG,
-)
+from config import CLASSES, colors
+
+FONT_PATH = "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"
+font = ImageFont.truetype(FONT_PATH, 20)
 
 
-def _xywh2xyxy(x):
-    y = np.zeros_like(x, dtype=np.float32)
-    y[:, 0] = x[:, 0] - x[:, 2] / 2  # x1
-    y[:, 1] = x[:, 1] - x[:, 3] / 2  # y1
-    y[:, 2] = x[:, 0] + x[:, 2] / 2  # x2
-    y[:, 3] = x[:, 1] + x[:, 3] / 2  # y2
-    return y
+def drawBoundingBox(img, classId, confidence, x1, y1, x2, y2):
+    color = colors[classId]
+    cv2.rectangle(img, (x1, y1), (x2, y2), color, 1)
+
+    img_pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(img_pil)
+
+    label = f"{list(CLASSES.keys())[classId]} ({confidence:.2f})"
+    text_color_pil = tuple(color.astype(int)[::-1])
+
+    text_x = max(0, x1)
+    text_y = max(0, y1 - 25)
+
+    draw.text((text_x, text_y), label, font=font, fill=text_color_pil)
+
+    np.copyto(img, cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR))
 
 
-def _clip_boxes(boxes, h, w):
-    boxes[:, 0] = np.clip(boxes[:, 0], 0, w - 1)
-    boxes[:, 1] = np.clip(boxes[:, 1], 0, h - 1)
-    boxes[:, 2] = np.clip(boxes[:, 2], 0, w - 1)
-    boxes[:, 3] = np.clip(boxes[:, 3], 0, h - 1)
-    return boxes
+class BaseYoloModel(ABC):
+    def __init__(self, modelPath, scoreMap=None, conf=0.25, iou=0.45, maxDet=20):
+        self.modelPath = modelPath
+        self.scoreMap = scoreMap
+        self.conf = conf
+        self.iou = iou
+        self.maxDet = maxDet
+        self._load_model()
 
+    @abstractmethod
+    def _load_model(self):
+        self.model = InferSession(device_id=0, model_path=self.modelPath)
 
-def _nms(boxes, scores, classes, iou_thres=0.7):
-    if boxes.size == 0:
-        return np.array([], dtype=np.int32)
-    # 按类别分别做 NMS，保持与 Ultralytics 默认一致（class-aware）
-    keep_indices = []
-    unique_classes = np.unique(classes)
-    for c in unique_classes:
-        idxs = np.where(classes == c)[0]
-        if idxs.size == 0:
-            continue
-        b = boxes[idxs].astype(np.float32)
-        s = scores[idxs].astype(np.float32)
-        order = s.argsort()[::-1]
-        while order.size > 0:
-            i = order[0]
-            keep_indices.append(idxs[i])
-            if order.size == 1:
-                break
-            xx1 = np.maximum(b[i, 0], b[order[1:], 0])
-            yy1 = np.maximum(b[i, 1], b[order[1:], 1])
-            xx2 = np.minimum(b[i, 2], b[order[1:], 2])
-            yy2 = np.minimum(b[i, 3], b[order[1:], 3])
-            w = np.maximum(0.0, xx2 - xx1)
-            h = np.maximum(0.0, yy2 - yy1)
-            inter = w * h
-            area_i = (b[i, 2] - b[i, 0]) * (b[i, 3] - b[i, 1])
-            area_others = (b[order[1:], 2] - b[order[1:], 0]) * (
-                b[order[1:], 3] - b[order[1:], 1]
-            )
-            iou = inter / (area_i + area_others - inter + 1e-9)
-            remain = np.where(iou <= float(iou_thres))[0]
-            order = order[remain + 1]
-    return np.array(keep_indices, dtype=np.int32)
+    def warm_up(self):
+        testImage = np.zeros((640, 640, 3), dtype=np.uint8)
+        self.infer(testImage)
 
+    def _preprocess(self, originalImage, imgsz=640):
+        h, w, _ = originalImage.shape
+        length = max((h, w))
 
-def _letterbox(img, new_shape=(640, 640), color=(114, 114, 114)):
-    h0, w0 = img.shape[:2]
-    new_h, new_w = int(new_shape[0]), int(new_shape[1])
-    r = min(new_h / h0, new_w / w0)
-    if r != 1.0:
-        interp = cv2.INTER_LINEAR if r > 1.0 else cv2.INTER_AREA
-        img_resized = cv2.resize(
-            img, (int(round(w0 * r)), int(round(h0 * r))), interpolation=interp
-        )
-    else:
-        img_resized = img
-    h, w = img_resized.shape[:2]
-    pad_w = new_w - w
-    pad_h = new_h - h
-    top = pad_h // 2
-    bottom = pad_h - top
-    left = pad_w // 2
-    right = pad_w - left
-    img_padded = cv2.copyMakeBorder(
-        img_resized, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color
-    )
-    return img_padded, r, (left, top)
-
-
-def _scale_boxes_to_original(boxes_xyxy, ratio, pad, orig_h, orig_w):
-    if boxes_xyxy.size == 0:
-        return boxes_xyxy
-    boxes = boxes_xyxy.copy().astype(np.float32)
-    boxes[:, [0, 2]] -= pad[0]
-    boxes[:, [1, 3]] -= pad[1]
-    boxes[:, :4] /= float(ratio)
-    boxes = _clip_boxes(boxes, orig_h, orig_w)
-    return boxes
-
-
-class Overall_Detector:
-    """模型1：全图检测器（OM 推理，YoloModelom 同款预/后处理）"""
-
-    def __init__(self, model_path: str, model_name: str = "检测器"):
-        # if not os.path.isfile(model_path):
-        #     raise FileNotFoundError(f"{model_name}模型文件不存在: {model_path}")
-        ext = os.path.splitext(model_path)[1].lower()
-        self.model_path = model_path
-        self.model_name = model_name
-        self.classes = CLASSES
-        self.conf = float(PRED_CONF_THRES)
-        self.iou = float(PRED_IOU_THRES)
-        self.max_det = 100
-        self.session = None
-        self.model = None
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        # 动态导入依赖
-        if ext == ".om":
-            from ais_bench.infer.interface import InferSession
-
-            try:
-                self.session = InferSession(
-                    device_id=int(DEVICE_ID) if DEVICE_ID is not None else 0,
-                    model_path=model_path,
-                )
-            except Exception as e:
-                raise RuntimeError(f"OM 模型加载失败: {e}")
-            self.colors = (
-                np.random.uniform(0, 255, size=(max(1, len(self.classes)), 3))
-            ).astype(np.uint8)
-            print(f"✅ {model_name}加载成功(OM): {model_path} | device_id={DEVICE_ID}")
-        elif ext == ".pt":
-            from ultralytics import YOLO
-
-            self.model = YOLO(model_path, verbose=False)
-            self.colors = (
-                np.random.uniform(0, 255, size=(max(1, len(self.classes)), 3))
-            ).astype(np.uint8)
-            print(f"✅ {model_name}加载成功(PT): {model_path}")
-
-    def preprocess_single(self, image):
-        """与 YoloModelom.py 同款预处理：方形填充到正方形，resize 到 640x640，blobFromImage 归一化。"""
-        h0, w0 = image.shape[:2]
-        if image.ndim == 3 and image.shape[2] == 3:
-            bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        else:
-            bgr = image
-        length = max(h0, w0)
-        img_sq = cv2.copyMakeBorder(
-            bgr,
+        # 填充 (Padding) 为正方形并调整至 imgsz x imgsz
+        image = cv2.copyMakeBorder(
+            originalImage,
             0,
-            length - h0,
+            length - h,
             0,
-            length - w0,
+            length - w,
             cv2.BORDER_CONSTANT,
             value=(114, 114, 114),
         )
+
+        # 归一化并转换为 blob (NCHW)
         blob = cv2.dnn.blobFromImage(
-            img_sq, scalefactor=1 / 255.0, size=(640, 640), swapRB=True, crop=False
+            image, scalefactor=1 / 255.0, size=(imgsz, imgsz), swapRB=True, crop=False
         )
-        scale = max(h0, w0) / 640.0
-        return blob, scale, (h0, w0)
 
-    def _postprocess(self, outputs, scale):
-        """后处理：NMS 和坐标还原。"""
-        if (
-            isinstance(outputs, tuple)
-            and len(outputs) > 0
-            and isinstance(outputs[0], torch.Tensor)
-        ):
-            tensor = outputs[0].unsqueeze(0)
-        else:
-            try:
-                tensor = (
-                    torch.from_numpy(outputs[0][0]).unsqueeze(0)
-                    if outputs and outputs[0]
-                    else None
-                )
-            except Exception:
-                tensor = (
-                    torch.from_numpy(np.array(outputs)).unsqueeze(0)
-                    if outputs is not None
-                    else None
-                )
+        scale = length / imgsz
+        return blob, scale
 
-        if tensor is None:
-            return (
-                np.zeros((0, 4), dtype=np.float32),
-                np.zeros(0, dtype=np.float32),
-                np.zeros(0, dtype=np.int32),
-            )
+    def _postprocess(self, outputs, originalImage, scale):
+        """
+        后处理：包含 NMS 和坐标还原
+        """
+        preds = torch.from_numpy(outputs[0][0]).unsqueeze(0)
 
-        dets = non_max_suppression(
-            tensor,
+        detections = non_max_suppression(
+            preds,
             conf_thres=self.conf,
             iou_thres=self.iou,
             classes=None,
             agnostic=False,
             multi_label=False,
-            max_det=self.max_det,
-        )
-        if not dets or len(dets[0]) == 0:
-            return (
-                np.zeros((0, 4), dtype=np.float32),
-                np.zeros(0, dtype=np.float32),
-                np.zeros(0, dtype=np.int32),
-            )
-
-        det = dets[0].clone()
-        det[:, :4] = det[:, :4] * float(scale)
-        boxes = det[:, :4].cpu().numpy().astype(np.float32)
-        confs = det[:, 4].cpu().numpy().astype(np.float32)
-        clses = det[:, 5].cpu().numpy().astype(np.int32)
-        return boxes, confs, clses
-
-    def _class_thresholds(self, cls_ids: np.ndarray) -> np.ndarray:
-        class_names = np.array(
-            [
-                self.classes[i] if 0 <= i < len(self.classes) else "unknown"
-                for i in cls_ids
-            ]
-        )
-        return np.array(
-            [
-                float(M1_CLASS_SCORE_THRESHOLDS.get(n, PRED_CONF_THRES))
-                for n in class_names
-            ],
-            dtype=np.float32,
+            max_det=self.maxDet,
         )
 
-    def _reverse_letterbox(
-        self, boxes_xyxy: np.ndarray, ratio_pad, orig_hw
-    ) -> np.ndarray:
-        ratio, pad = ratio_pad
-        orig_h, orig_w = orig_hw
-        return _scale_boxes_to_original(boxes_xyxy, ratio, pad, orig_h, orig_w)
+        detectionFrame = originalImage.copy()
+        results = []
 
-    def _nms_by_class(
-        self, boxes_xyxy: np.ndarray, scores: np.ndarray, cls_ids: np.ndarray
-    ) -> np.ndarray:
-        return _nms(boxes_xyxy, scores, cls_ids, iou_thres=float(PRED_IOU_THRES))
+        for det in detections:
+            if len(det) == 0:
+                continue
 
-    def infer(self, img):
-        """执行推理（与 YoloModelom 同款预处理/后处理，固定 640x640）。"""
-        blob, scale, _ = self.preprocess_single(img)
-        outs = self.session.infer(feeds=[blob], mode="static")
-        return self._postprocess(outs, scale)
+            det[:, :4] *= scale
 
-    def is_available(self):
-        """检查模型是否可用"""
-        return self.session is not None
+            for *xyxy, conf, cls in det:
+                x1, y1, x2, y2 = map(int, xyxy)
+                class_id = int(cls)
+                score = float(conf)
 
+                drawBoundingBox(detectionFrame, class_id, score, x1, y1, x2, y2)
 
-class Local_Detector:
-    """模型2：区域检测器（支持 OM/PT 模型）"""
-
-    def __init__(self, model_path: str, model_name: str = "检测器"):
-        if not os.path.isfile(model_path):
-            raise FileNotFoundError(f"{model_name}模型文件不存在: {model_path}")
-        ext = os.path.splitext(model_path)[1].lower()
-        self.model_path = model_path
-        self.model_name = model_name
-        self.classes = CLASSES
-        self.conf = float(PRED_CONF_THRES)
-        self.iou = float(PRED_IOU_THRES)
-        self.max_det = 100
-        self.session = None
-        self.model = None
-        # 初始化模型
-        try:
-            if ext == ".om":
-                from ais_bench.infer.interface import InferSession
-                self.session = InferSession(
-                    device_id=int(DEVICE_ID) if DEVICE_ID is not None else 0,
-                    model_path=model_path,
+                results.append(
+                    {
+                        "classId": class_id,
+                        "className": list(CLASSES.keys())[class_id],
+                        "score": score,
+                        "box": [x1, y1, x2, y2],
+                    }
                 )
-            elif ext == ".pt":
-                from ultralytics import YOLO
-                self.model = YOLO(model_path, verbose=False)
-            else:
-                raise ValueError(f"{model_name}不支持的模型格式: {ext}")
-        except Exception as e:
-            raise RuntimeError(f"{ext.upper()} 模型加载失败: {e}")
-        self.colors = (
-            np.random.uniform(0, 255, size=(max(1, len(self.classes)), 3))
-        ).astype(np.uint8)
-        print(f"✅ {self.model_name}加载成功({ext.upper()}): {model_path}")
 
-    def preprocess_single(self, image):
-        """与 YoloModelom.py 一致：方形填充，640x640，blobFromImage。"""
-        h0, w0 = image.shape[:2]
-        if image.ndim == 3 and image.shape[2] == 3:
-            bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        else:
-            bgr = image
-        length = max(h0, w0)
-        img_sq = cv2.copyMakeBorder(
-            bgr,
-            0,
-            length - h0,
-            0,
-            length - w0,
-            cv2.BORDER_CONSTANT,
-            value=(114, 114, 114),
-        )
-        blob = cv2.dnn.blobFromImage(
-            img_sq, scalefactor=1 / 255.0, size=(640, 640), swapRB=True, crop=False
-        )
-        scale = max(h0, w0) / 640.0
-        return blob, scale, (h0, w0)
+        return [d["className"] for d in results], detectionFrame
 
-    def _postprocess(self, outputs, scale):
-        """OM 模型专用后处理"""
-        return self._postprocess_om(outputs, scale)
-
-    def _postprocess_om(self, outputs, scale):
-        """OM 模型后处理"""
-        try:
-            tensor = torch.from_numpy(outputs[0][0]).unsqueeze(0)
-        except Exception:
-            tensor = (
-                torch.from_numpy(np.array(outputs)).unsqueeze(0)
-                if outputs is not None
-                else None
-            )
-        if tensor is None:
-            return (
-                np.zeros((0, 4), dtype=np.float32),
-                np.zeros(0, dtype=np.float32),
-                np.zeros(0, dtype=np.int32),
-            )
-
-        dets = non_max_suppression(
-            tensor,
-            conf_thres=self.conf,
-            iou_thres=self.iou,
-            classes=None,
-            agnostic=False,
-            multi_label=False,
-            max_det=self.max_det,
-        )
-        if not dets or len(dets[0]) == 0:
-            return (
-                np.zeros((0, 4), dtype=np.float32),
-                np.zeros(0, dtype=np.float32),
-                np.zeros(0, dtype=np.int32),
-            )
-
-        det = dets[0].clone()
-        det[:, :4] = det[:, :4] * float(scale)
-        boxes = det[:, :4].cpu().numpy().astype(np.float32)
-        confs = det[:, 4].cpu().numpy().astype(np.float32)
-        clses = det[:, 5].cpu().numpy().astype(np.int32)
-        return boxes, confs, clses
-
-    def _postprocess_pt(self, preds, scale):
-        """PT 模型后处理"""
-        if not isinstance(preds, list):
-            preds = [preds]
-        dets = non_max_suppression(
-            preds[0].boxes.data,
-            conf_thres=self.conf,
-            iou_thres=self.iou,
-            classes=None,
-            agnostic=False,
-            multi_label=False,
-            max_det=self.max_det,
-        )
-        if not dets or len(dets[0]) == 0:
-            return (
-                np.zeros((0, 4), dtype=np.float32),
-                np.zeros(0, dtype=np.float32),
-                np.zeros(0, dtype=np.int32),
-            )
-
-        det = dets[0].clone()
-        det[:, :4] = det[:, :4] * float(scale)
-        boxes = det[:, :4].cpu().numpy().astype(np.float32)
-        confs = det[:, 4].cpu().numpy().astype(np.float32)
-        clses = det[:, 5].cpu().numpy().astype(np.int32)
-        return boxes, confs, clses
-
-    def _class_thresholds(self, cls_ids: np.ndarray) -> np.ndarray:
-        class_names = np.array(
-            [
-                self.classes[i] if 0 <= i < len(self.classes) else "unknown"
-                for i in cls_ids
-            ]
-        )
-        return np.array(
-            [
-                float(M2_CLASS_SCORE_THRESHOLDS.get(n, PRED_CONF_THRES))
-                for n in class_names
-            ],
-            dtype=np.float32,
-        )
-
-    def _reverse_letterbox(
-        self, boxes_xyxy: np.ndarray, ratio_pad, orig_hw
-    ) -> np.ndarray:
-        ratio, pad = ratio_pad
-        orig_h, orig_w = orig_hw
-        return _scale_boxes_to_original(boxes_xyxy, ratio, pad, orig_h, orig_w)
-
-    def _nms_by_class(
-        self, boxes_xyxy: np.ndarray, scores: np.ndarray, cls_ids: np.ndarray
-    ) -> np.ndarray:
-        return _nms(boxes_xyxy, scores, cls_ids, iou_thres=float(PRED_IOU_THRES))
-
-    def infer(self, img):
-        """执行推理（支持 OM/PT 模型）"""
-        blob, scale, _ = self.preprocess_single(img)
-        if self.session is not None:  # OM 模型
-            outs = self.session.infer(feeds=[blob], mode="static")
-            return self._postprocess(outs, scale)
-        elif self.model is not None:  # PT 模型
-            # 转换为 torch tensor 并推理
-            import torch
-            tensor = torch.from_numpy(blob).to(self.model.device)
-            preds = self.model(tensor)  # 直接调用模型
-            return self._postprocess_pt(preds, scale)
-        else:
-            raise RuntimeError("未加载任何模型")
-
-    def is_available(self):
-        """检查模型是否可用（支持 OM/PT）"""
-        return self.session is not None or self.model is not None
-
-
-class ModelManager:
-    """模型管理器，负责所有模型的初始化和管理"""
-
-    def __init__(self):
-        print("正在初始化模型管理器...")
-        try:
-            self.overall_detector = Overall_Detector(
-                ZHUOZI_MODEL_PATH, "模型1：全图检测器"
-            )
-        except Exception as e:
-            print(f"❌ 模型1加载失败: {e}")
-            raise
-        try:
-            self.local_detector = Local_Detector(WUPIN_MODEL_PATH, "模型2：区域检测器")
-        except Exception as e:
-            print(f"❌ 模型2加载失败: {e}")
-            raise
-
-    # 接口函数
-    def get_overall_detector(self):
-        """获取全图检测器"""
-        return self.overall_detector
-
-    def get_local_detector(self):
-        """获取区域检测器"""
-        return self.local_detector
+    def infer(self, rgbFrame):
+        blob, scale = self._preprocess(rgbFrame)
+        outputs = self.model.infer(feeds=[blob], mode="static")
+        outputs = [np.array(output) for output in outputs]
+        classNames, detectionFrame = self._postprocess(outputs, rgbFrame, scale)
+        return classNames, detectionFrame
