@@ -1,23 +1,20 @@
+import numpy as np
+
+
 # config.py
 
-import os
+## 个人配置
+raceName = "3D视觉挑战赛"
+teamName = "仙道杀招-五指拳心剑"
+roundNum = 2
+teamShortName = "DUT-WZQXJ"
+version = "0.0.1"
+resultPath = f"results/machine/{teamShortName}-R{roundNum}.txt"
 
-# 项目根目录（src 上一层目录）
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+## camera
+videoStreams = {"rgb": True, "depth": False, "pointCloud": False}
 
-
-# ONNX 模型路径
-# 桌子 物品
-ZHUOZI_MODEL_PATH = "./models/yolov8n.pt"
-WUPIN_MODEL_PATH = "./models/yolov8n.pt"
-
-# 推理设备与调试
-DEVICE_ID = 0
-
-
-# 预热图片路径（模型加载后进行一次预推理）
-WARMUP_IMAGE_PATH = os.path.join(BASE_DIR, "data", "test", "0-0-0-0-0-1-180121.png")
-
+## model
 CLASSES = [
     "desk",
     "CA001",
@@ -37,12 +34,29 @@ CLASSES = [
     "CD003",
     "CD004",
 ]
-
-# -------- 通用检测阈值 --------
-# 统一推理阈值（与 Ultralytics predict 示例一致）
+### path
+ZHUOZI_MODEL_PATH = "./models/yolov8n.pt"
+WUPIN_MODEL_PATH = "./models/yolov8n.pt"
+### iou threshold
 PRED_IOU_THRES = 0.66
-# 统一置信度阈值（未命中各模型细粒度阈值时回退）
 PRED_CONF_THRES = 0.68
+
+## visualize
+colors = np.random.uniform(0, 255, size=(len(CLASSES), 3))
+
+import os
+
+# 项目根目录（src 上一层目录）
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+
+
+# 推理设备与调试
+DEVICE_ID = 0
+
+
+# 预热图片路径（模型加载后进行一次预推理）
+WARMUP_IMAGE_PATH = os.path.join(BASE_DIR, "data", "test", "0-0-0-0-0-1-180121.png")
+
 
 # 模型2（local_detector）各类别最低置信度阈值（未配置使用 PRED_CONF_THRES）
 M2_CLASS_SCORE_THRESHOLDS = {
@@ -118,7 +132,6 @@ try:
     os.makedirs(RESULT_FOLDER, exist_ok=True)
 except Exception:
     pass
-TEAM_SHORT_NAME = "DUT-WZQXJ"
 JUDGE_BOX_IP = "192.168.1.88"
 JUDGE_BOX_PORT = 6666
 
@@ -132,7 +145,7 @@ CAPTURE_FRAME_COUNT = 3
 
 # -------- 相机抓拍保存路径 --------
 # 原始抓拍保存目录
-CAPTURE_SAVE_DIR = os.path.join(BASE_DIR, "data", "capture")
+CAPTURE_SAVE_DIR = "./results/human/"
 
 # 桌子外扩比例（用于裁剪后扩大区域，再交给模型2）
 DESK_EXPANSION_RATIO = 0.20

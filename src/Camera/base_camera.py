@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import numpy as np
 
 
 class BaseCamera(ABC):
@@ -17,3 +18,16 @@ class BaseCamera(ABC):
     @abstractmethod
     def get_frame(self):
         pass
+
+    def capture_frame(self, save_path):
+        if not self.isOpen:
+            print("Camera is not open. Cannot capture frame.")
+            return
+
+        rgbFrame, depthFrame, pointCloudFrame = self.get_frame()
+        np.savez(
+            save_path,
+            rgbFrame=rgbFrame,
+            depthFrame=depthFrame,
+            pointCloudFrame=pointCloudFrame,
+        )

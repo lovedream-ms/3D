@@ -7,6 +7,8 @@ from ultralytics.models.yolo.obb import OBBPredictor
 from ultralytics.models.yolo.segment import SegmentationPredictor
 from ultralytics.models.yolo.pose import PosePredictor
 
+from ultralytics.engine.results import Results
+
 
 class OmEngine:
     """把昇腾推理封装成类似 PyTorch nn.Module 的接口"""
@@ -46,10 +48,11 @@ class YoloModel:
             from ultralytics import YOLO
 
             self.model = YOLO(model_path)
-            self.model.predict(np.zeros((64, 64, 3), dtype=np.uint8), task=task)
-            self.predictor = self.model.predictor
 
-    def predict(self, frame):
+        self.model.predict(np.zeros((64, 64, 3), dtype=np.uint8), task=task)
+        self.predictor = self.model.predictor
+
+    def predict(self, frame) -> Results:
         im = self.predictor.preprocess([frame])
         preds = self.predictor.model(im)
         return self.predictor.postprocess(preds, im, [frame])[0]
