@@ -1,0 +1,152 @@
+QMainWindow {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                                stop:0 #e0e0e0, stop:1 #b8b8b8);
+}
+
+/* 2. 顶部雕刻铭牌风格 */
+QLabel#headerLabel {
+    background-color: transparent;
+    color: #333;
+    font-size: 20px;
+    font-weight: 900;
+    /* 模拟雕刻字的文字阴影效果: 白色高光在下 */
+    padding: 10px;
+    border-bottom: 2px solid #fdfdfd; 
+    border-top: 2px solid #999;
+}
+
+/* 3. 控制台模块分组 (QGroupBox) */
+QGroupBox {
+    background-color: transparent;
+    border-top: 2px solid #999;
+    border-left: 2px solid #999;
+    border-right: 2px solid #fdfdfd;
+    border-bottom: 2px solid #fdfdfd;
+    border-radius: 4px;
+    margin-top: 15px; /* 为标题留出空间 */
+    font-weight: bold;
+    color: #444;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top center;
+    padding: 0 5px;
+    background-color: #d0d0d0; /* 盖住边框线 */
+    border: 1px solid #aaa;
+    border-radius: 2px;
+}
+
+/* 4. 物理工业按钮 (QPushButton) */
+QPushButton {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                                stop:0 #f8f8f8, stop:0.5 #e0e0e0, stop:1 #c8c8c8);
+    border: 1px solid #777;
+    border-bottom: 3px solid #555; /* 底部厚度模拟 3D 凸起 */
+    border-right: 2px solid #666;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-weight: bold;
+    color: #222;
+}
+QPushButton:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                                stop:0 #ffffff, stop:0.5 #e8e8e8, stop:1 #d0d0d0);
+}
+QPushButton:pressed {
+    /* 按钮按下时的状态：反转渐变，改变边框厚度模拟物理按压下陷 */
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                                stop:0 #b0b0b0, stop:1 #d8d8d8);
+    border-bottom: 1px solid #777;
+    border-right: 1px solid #777;
+    border-top: 3px solid #444; /* 顶部加深模拟阴影 */
+    border-left: 2px solid #555;
+    padding: 10px 10px 6px 14px; /* 文字向右下角微调 */
+}
+
+/* 5. 屏幕显示区 (监控及结果 - 模拟工业级 CRT/LCD 监视器) */
+QLabel#displayScreen {
+    /* 核心：纯黑背景，确保画面比例不对齐时的黑边隐形 */
+    background-color: #000000; 
+    min-height: 480px;
+
+    /* OSD (屏幕显示) 字体风格：无信号时的提示文字 */
+    color: #ff3333; /* 警示红 */
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 24px;
+    font-weight: bold;
+    letter-spacing: 2px; /* 增加字符间距，模拟像素字 */
+    
+    /* 拟物化边框：模拟厚重的塑料/金属显示器外框 */
+    /* 左上光源：因此左上边框受光线遮挡偏暗，右下边框迎光偏亮 */
+    border-top: 6px solid #222222;
+    border-left: 6px solid #222222;
+    border-bottom: 6px solid #777777;
+    border-right: 6px solid #777777;
+    
+    /* 屏幕玻璃的轻微圆角 */
+    border-radius: 4px;
+    
+    /* 内边距：防止视频画面直接贴合物理边框，留出呼吸感 */
+    padding: 2px;
+}
+/* 6. 日志输出终端 (QTextEdit) */
+QTextEdit#logOutput {
+    background-color: #051014;
+    color: #00ff00;
+    font-family: "Consolas", "Courier New", monospace; /* 等宽字体 */
+    border-top: 3px solid #000000;
+    border-left: 3px solid #000000;
+    border-bottom: 2px solid #aaaaaa;
+    border-right: 2px solid #aaaaaa;
+    border-radius: 2px;
+}
+
+/* 7. 分割线 (QFrame) */
+QFrame#separatorLine {
+    border-top: 2px solid #999;
+    border-bottom: 2px solid #fff;
+    max-height: 2px;
+}
+
+/* --- 8. 结果表格 (QTableWidget 工业屏幕风格) --- */
+QTableWidget#resultTable {
+    background-color: #051014; /* 深邃的仪表盘底色 */
+    color: #00ff00;            /* 默认荧光绿字体 */
+    gridline-color: #1a3333;   /* 暗色网格线，降低视觉干扰 */
+    border-top: 3px solid #000000;
+    border-left: 3px solid #000000;
+    border-bottom: 2px solid #aaaaaa;
+    border-right: 2px solid #aaaaaa;
+    border-radius: 2px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 15px;
+    font-weight: bold;
+}
+
+/* 隐藏表格自带的背景色干扰 */
+QTableWidget#resultTable::item {
+    padding: 5px;
+}
+QTableWidget#resultTable::item:selected {
+    background-color: #004400; /* 选中行时的暗绿色高亮 */
+    color: #ffffff;
+}
+
+/* --- 9. 表头 (金属物理质感) --- */
+QHeaderView::section {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                                stop:0 #f8f8f8, stop:0.5 #e0e0e0, stop:1 #c8c8c8);
+    color: #222222;
+    padding: 6px;
+    border: 1px solid #777777;
+    border-right: 1px solid #999999;
+    border-bottom: 2px solid #555555; /* 底部加深，模拟凸起 */
+    font-weight: bold;
+    font-size: 14px;
+}
+
+/* 隐藏左上角的空白块背景 */
+QTableCornerButton::section {
+    background-color: #d0d0d0;
+    border: 1px solid #777777;
+}
