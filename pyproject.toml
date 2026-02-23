@@ -9,6 +9,7 @@ dependencies = [
     "opencv-python>=4.13.0.92",
     "pyqt6>=6.10.2",
     "ultralytics>=8.4.12",
+    "viztracer>=1.1.1",
 ]
 [tool.pytest.ini_options]
 markers = [
