@@ -1,5 +1,8 @@
 import torch
 import numpy as np
+import cv2
+import requests
+import pickle
 
 from ultralytics.models.yolo.classify import ClassificationPredictor
 from ultralytics.models.yolo.detect import DetectionPredictor
@@ -58,11 +61,34 @@ class YoloModel:
         return self.predictor.postprocess(preds, im, [frame])[0]
 
 
+class WebModel:
+    def __init__(self, model_url, task="detect"):
+        self.url = model_url
+        self.task = task
+
+    def predict(self, frame) -> Results:
+        success, img_encoded = cv2.imencode(".jpg", frame)
+        if not success:
+            raise ValueError("图像编码失败")
+
+        files = {"file": ("image.jpg", img_encoded.tobytes(), "image/jpeg")}
+        response = requests.post(self.url, files=files)
+
+        if response.status_code != 200:
+            raise RuntimeError(f"Web API 错误: {response.text}")
+
+        result: Results = pickle.loads(response.content)
+        result.orig_img = frame
+
+        return result
+
+
 if __name__ == "__main__":
     import cv2
 
     # 一次支持 pt/om, cls/detect/obb/segment/pose 全任务，其余任务均可以使用
-    model = YoloModel("models/yolov8n.pt", task="detect")
+    # model = YoloModel("models/yolov8n.pt", task="detect")
+    model = WebModel("http://127.0.0.1:8000/predict", task="detect")
     # model = YoloModel("models/yolov8n.om", task="detect")
     result = model.predict(cv2.imread("data/test/0-0-0-0-0-1-180121.png"))
     result.show()
