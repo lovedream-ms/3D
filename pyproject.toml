@@ -6,9 +6,12 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "black>=26.1.0",
+    "fastapi>=0.131.0",
     "opencv-python>=4.13.0.92",
     "pyqt6>=6.10.2",
+    "python-multipart>=0.0.22",
     "ultralytics>=8.4.12",
+    "uvicorn>=0.41.0",
     "viztracer>=1.1.1",
 ]
 [tool.pytest.ini_options]
