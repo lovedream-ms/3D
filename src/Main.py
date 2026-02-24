@@ -34,6 +34,7 @@ from Config import *
 
 class MainWindow(QMainWindow):
     detectionFinishedSignal = pyqtSignal()
+    updateTableSignal = pyqtSignal(list)
 
     def __init__(self):
         self.socketClient = Socket(JUDGE_BOX_IP, JUDGE_BOX_PORT)
@@ -170,6 +171,7 @@ class MainWindow(QMainWindow):
         self.cameraButton.clicked.connect(self.toggle_camera)
         self.exitButton.clicked.connect(self.close)
         self.detectionFinishedSignal.connect(self.close)
+        self.updateTableSignal.connect(self.update_result_table)
 
     def update_frame(self):
         if self.cameraManager.isOpen:
@@ -240,8 +242,9 @@ class MainWindow(QMainWindow):
             results.append(self.detect_frames(n + 1))
 
         _write_txt(results)
-        self.update_result_table(results)
+        self.updateTableSignal.emit(results)
         self.socketClient.send_result(resultPath)
+        self.detectionFinishedSignal.emit()
 
     def detect_frames(self, tableNum) -> Counter:
         detectionResults = []

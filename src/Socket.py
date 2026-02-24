@@ -31,7 +31,7 @@ class Socket:
     def send_result(self, savePath):
         if not self.isOpen and not self.connect():
             print(
-                "\033[31mERROR: Socket connect failed.File is saved to data/measure.txt\033[0m"
+                f"\033[31mERROR: Socket connect failed.File is saved to {savePath}\033[0m"
             )
             return False
 
