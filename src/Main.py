@@ -9,14 +9,12 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QTextEdit,
     QFrame,
+    QTableWidgetItem,
+    QTableWidget,
+    QHeaderView,
 )
 from PyQt6.QtGui import QPixmap, QImage, QColor
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView
-from collections import Counter
-from PyQt6.QtWidgets import QTableWidgetItem
-from PyQt6.QtGui import QColor
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 
 import numpy as np
 import time
@@ -35,6 +33,8 @@ from Config import *
 
 
 class MainWindow(QMainWindow):
+    detectionFinishedSignal = pyqtSignal()
+
     def __init__(self):
         self.socketClient = Socket(JUDGE_BOX_IP, JUDGE_BOX_PORT)
         self.socketClient.send_start(1)
@@ -45,7 +45,6 @@ class MainWindow(QMainWindow):
 
         self.bothModel = YoloModel(model_path="models/yolov8n.pt", task="detect")
 
-        self.savePath = f"results/machine/camera"
         self.status = "idle"
         self.resultFrame = np.zeros((480, 640, 3), dtype=np.uint8)
 
@@ -95,11 +94,13 @@ class MainWindow(QMainWindow):
         self.cameraButton = QPushButton("打开摄像头")
         self.round1Button = QPushButton("开始检测")
         self.captureButton = QPushButton("录制图片")
+        self.exitButton = QPushButton("退出程序")
 
         controlButtons = [
             self.cameraButton,
             self.round1Button,
             self.captureButton,
+            self.exitButton,
         ]
 
         result_group = QGroupBox("Recognition Result")
@@ -167,6 +168,8 @@ class MainWindow(QMainWindow):
         self.captureButton.clicked.connect(self.capture_frame)
         self.round1Button.clicked.connect(self.start_detection)
         self.cameraButton.clicked.connect(self.toggle_camera)
+        self.exitButton.clicked.connect(self.close)
+        self.detectionFinishedSignal.connect(self.close)
 
     def update_frame(self):
         if self.cameraManager.isOpen:
@@ -186,7 +189,7 @@ class MainWindow(QMainWindow):
             return
 
         q_image = QImage(
-            showFrame.data,
+            showFrame.tobytes(),
             showFrame.shape[1],
             showFrame.shape[0],
             showFrame.shape[1] * 3,
@@ -217,13 +220,15 @@ class MainWindow(QMainWindow):
     def start_detection(self):
         self.status = "detection"
         self.round1Button.setEnabled(False)
+        self.updateFrameTimer.stop()
         self.log("Starting detection thread...")
+
+        if not self.cameraManager.isOpen:
+            self.log("Camera is not open. auto open.")
+            self.toggle_camera()
 
         self.detection_thread = threading.Thread(target=self.detect, args=())
         self.detection_thread.start()
-
-        self.round1Button.setEnabled(True)
-        self.log("Detection thread finished.")
 
     def detect(self):
         results: list[Counter] = []
@@ -314,8 +319,9 @@ class MainWindow(QMainWindow):
         self.statusLabel.setText("Status: Finished")
         self.statusLabel.setStyleSheet("color: green; padding: 4px;")
 
-    def close_event(self, event):
+    def closeEvent(self, event):
         self.log("Application closed.")
+
         self.updateFrameTimer.stop()
         self.socketClient.close()
         event.accept()
@@ -326,7 +332,7 @@ if __name__ == "__main__":
 
     with open("assets/Skeuomorphic.qss", "r", encoding="utf-8") as f:
         app.setStyleSheet(f.read())
-
     window = MainWindow()
+    QTimer.singleShot(0, window.start_detection)
     window.show()
     sys.exit(app.exec())
