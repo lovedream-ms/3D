@@ -27,7 +27,7 @@ from ultralytics.engine.results import Results
 
 import Camera
 from Socket import Socket
-from YoloModel import YoloModel
+from DetectionPipeline import DetectionPipeline, DetectionConfig
 from Utils import _write_txt
 from Config import *
 
@@ -44,7 +44,8 @@ class MainWindow(QMainWindow):
 
         self.cameraManager = Camera.OpenCVCamera()
 
-        self.bothModel = YoloModel(model_path="models/yolov8n.pt", task="detect")
+        config = DetectionConfig()
+        self.pipeline = DetectionPipeline(config)
 
         self.status = "idle"
         self.resultFrame = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -239,44 +240,12 @@ class MainWindow(QMainWindow):
         for n in range(tableNum):
             self.capture_frame(n + 1)
             self.socketClient.send_rotate() if roundNum == 2 else None
-            results.append(self.detect_frames(n + 1))
+            results.append(self.pipeline.detect_frames(n + 1))
 
         _write_txt(results)
         self.updateTableSignal.emit(results)
         self.socketClient.send_result(resultPath)
         self.detectionFinishedSignal.emit()
-
-    def detect_frames(self, tableNum) -> Counter:
-        detectionResults = []
-
-        imagePaths = glob.glob(f"results/machine/camera/T{tableNum}-*.npz")
-        print(f"Found {len(imagePaths)} images for detection: {imagePaths}")
-        for imagePath in imagePaths:
-            with np.load(imagePath, allow_pickle=True) as data:
-                rgbFrame, depthFrame, pointCloudFrame = (
-                    data["rgbFrame"],
-                    data["depthFrame"],
-                    data["pointCloudFrame"],
-                )
-
-            detectionResult, self.resultFrame = self.detect_frame(
-                rgbFrame, depthFrame, pointCloudFrame
-            )
-            filename = imagePath.split("/")[-1].replace(".npz", ".npy")
-            np.save(f"results/machine/detection/{filename}", self.resultFrame)
-            detectionResults.append(detectionResult)
-
-        return self.fusion_results(detectionResults)
-
-    def detect_frame(
-        self, rgbFrame, depthFrame, pointCloudFrame
-    ) -> tuple[Results, np.ndarray]:
-        # TODO: 使用者需要将这里的类型注明,以便后续开发和维护
-        detectionResult: Results = self.bothModel.predict(rgbFrame)
-        return detectionResult, detectionResult.plot()
-
-    def fusion_results(self, detectionResults) -> Counter:
-        return Counter({"CA001": 2, "CA002": 1})
 
     def update_result_table(self, resultCounter: list[Counter]):
         total_rows = sum(len(c) for c in resultCounter)
