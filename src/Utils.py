@@ -24,6 +24,15 @@ def _write_txt(results: List[Counter]):
         f.write("\n".join(lines))
 
 
+def initResult():
+    import os
+
+    os.makedirs("results/human/camera", exist_ok=True)
+    for num in range(3):
+        os.makedirs(f"results/machine/camera/T{num+1}", exist_ok=True)
+        os.makedirs(f"results/machine/detection/T{num+1}", exist_ok=True)
+
+
 if __name__ == "__main__":
     # 测试写文件
     testResults = [Counter({"CA001": 2, "CA002": 1}), Counter({"CA001": 1})]

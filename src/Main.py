@@ -28,7 +28,7 @@ from ultralytics.engine.results import Results
 import Camera
 from Socket import Socket
 from DetectionPipeline import DetectionPipeline, DetectionConfig
-from Utils import _write_txt
+from Utils import _write_txt, initResult
 from Config import *
 
 
@@ -308,6 +308,7 @@ class MainWindow(QMainWindow):
 
 
 if __name__ == "__main__":
+    initResult()
     app = QApplication(sys.argv)
 
     with open("assets/Skeuomorphic.qss", "r", encoding="utf-8") as f:
