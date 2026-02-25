@@ -44,8 +44,14 @@ class MainWindow(QMainWindow):
 
         self.cameraManager = Camera.OpenCVCamera()
 
-        config = DetectionConfig()
-        self.pipeline = DetectionPipeline(config)
+        try:
+            cfg = DetectionConfig.load_from_json("assets/best-param.json")
+            self.log("成功加载最优超参数配置")
+        except FileNotFoundError:
+            cfg = DetectionConfig()
+            self.log("未找到优化配置，使用默认参数")
+
+        self.pipeline = DetectionPipeline(cfg)
 
         self.status = "idle"
         self.resultFrame = np.zeros((480, 640, 3), dtype=np.uint8)
