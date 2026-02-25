@@ -8,15 +8,28 @@ dependencies = [
     "black>=26.1.0",
     "fastapi>=0.131.0",
     "opencv-python>=4.13.0.92",
+    "optuna>=4.7.0",
+    "optuna-dashboard>=0.20.0",
+    "plotly>=6.5.2",
     "pyqt6>=6.10.2",
     "python-multipart>=0.0.22",
+    "scikit-learn>=1.8.0",
     "ultralytics>=8.4.12",
     "uvicorn>=0.41.0",
     "viztracer>=1.1.1",
 ]
+[[tool.uv.index]]
+url="https://pypi.tuna.tsinghua.edu.cn/simple"
+default=true
+
 [tool.pytest.ini_options]
 markers = [
     "hardware: 涉及物理硬件的测试",
     "perf: 性能压力测试",
 ]
 pythonpath = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
