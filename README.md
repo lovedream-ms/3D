@@ -28,7 +28,7 @@
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/lovedream-ms/3D.git
+git clone -b devel-ms https://github.com/lovedream-ms/3D.git
 cd 3D
 
 # 2. 同步并安装依赖
