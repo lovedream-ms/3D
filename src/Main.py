@@ -215,7 +215,7 @@ class MainWindow(QMainWindow):
             return
 
         timestamp = time.strftime("%m%d-%H:%M:%S")
-        filePath = f"results/machine/camera/T{tableNum}-{timestamp}.npz"
+        filePath = f"results/machine/camera/T{tableNum}/{timestamp}.npz"
         self.cameraManager.capture_frame(filePath)
 
         self.log(f"Image captured and saved to: {filePath}")
@@ -240,7 +240,9 @@ class MainWindow(QMainWindow):
         for n in range(tableNum):
             self.capture_frame(n + 1)
             self.socketClient.send_rotate() if roundNum == 2 else None
-            results.append(self.pipeline.detect_frames(n + 1))
+            results.append(
+                self.pipeline.detect_frames(f"results/machine/camera/T{n + 1}")
+            )
 
         _write_txt(results)
         self.updateTableSignal.emit(results)

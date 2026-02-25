@@ -1,4 +1,3 @@
-# VisionPipeline.py
 import numpy as np
 import glob
 from collections import Counter
@@ -37,11 +36,11 @@ class DetectionPipeline:
 
         self.model = YoloModel(model_path=ZHUOZI_MODEL_PATH, task="detect")
 
-    def detect_frames(self, tableNum) -> Counter:
+    def detect_frames(self, path) -> Counter:
         detectionResults = []
 
-        imagePaths = glob.glob(f"results/machine/camera/T{tableNum}-*.npz")
-        print(f"DetectionPipeline: Found {len(imagePaths)} images for T{tableNum}")
+        imagePaths = glob.glob(f"{path}/*.npz")
+        print(f"DetectionPipeline: Found {len(imagePaths)} images for path {path}")
 
         for imagePath in imagePaths:
             with np.load(imagePath, allow_pickle=True) as data:
@@ -54,8 +53,8 @@ class DetectionPipeline:
             detectionResult, self.resultFrame = self.detect_frame(
                 rgbFrame, depthFrame, pointCloudFrame
             )
-            filename = imagePath.split("/")[-1].replace(".npz", ".npy")
-            np.save(f"results/machine/detection/{filename}", self.resultFrame)
+            filePath = imagePath.replace("camera", "detection").replace(".npz", ".npy")
+            np.save(filePath, self.resultFrame)
             detectionResults.append(detectionResult)
 
         return self.fusion_results(detectionResults)
@@ -67,6 +66,31 @@ class DetectionPipeline:
         detectionResult: Results = self.model.predict(rgbFrame)
         return detectionResult, detectionResult.plot()
 
-    def fusion_results(self, detectionResults) -> Counter:
-        # TODO: 替换为真实的融合逻辑
-        return Counter({"CA001": 2, "CA002": 1})
+    def fusion_results(self, detectionResults: list[Results]) -> Counter:
+        final_counter = Counter()
+        frame_counts = []
+
+        for result in detectionResults:
+            current_frame_counter = Counter()
+
+            if result.boxes is None or len(result.boxes) == 0:
+                frame_counts.append(current_frame_counter)
+                continue
+
+            classes = result.boxes.cls.cpu().numpy().astype(int)
+            confs = result.boxes.conf.cpu().numpy()
+            names = result.names  # 字典: {0: 'CA001', 1: 'CA002', ...}
+
+            for cls_id, conf in zip(classes, confs):
+                if conf >= self.config.conf_thres:
+                    class_name = names[cls_id]
+                    current_frame_counter[class_name] += 1
+
+            frame_counts.append(current_frame_counter)
+
+        for frame_counter in frame_counts:
+            for cls_name, count in frame_counter.items():
+                if count > final_counter[cls_name]:
+                    final_counter[cls_name] = count
+
+        return final_counter
