@@ -252,4 +252,4 @@ your_project/
 ## 💬 参与贡献与交流
 欢迎提交 Issue 报告 Bug 或提出 Feature 请求！如果你在 RoboCup 备赛过程中有好的优化策略，也非常欢迎提交 Pull Request。
 如果本项目对你的比赛有帮助，请右上角点个 **⭐ Star** 支持一下！
-![Wechat 二维码](./assets/wechat.png)
+<!-- ![Wechat 二维码](./assets/wechat.png) -->
