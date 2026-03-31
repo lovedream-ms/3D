@@ -1,3 +1,5 @@
+> 👉 为了便于大家提供PR和Issue,我在个人的仓库新建了仓库,希望大家积极贡献和提问([https://github.com/gaogaotiantian/viztracer](https://github.com/lovedream-ms/RobotVisual)) 
+
 # 🤖 3D Robot Vision Template
 
 > **中国机器人大赛暨 RoboCup 机器人世界杯中国赛 - 机器人先进视觉赛项 核心模板代码**
@@ -252,4 +254,4 @@ your_project/
 ## 💬 参与贡献与交流
 欢迎提交 Issue 报告 Bug 或提出 Feature 请求！如果你在 RoboCup 备赛过程中有好的优化策略，也非常欢迎提交 Pull Request。
 如果本项目对你的比赛有帮助，请右上角点个 **⭐ Star** 支持一下！
-<!-- ![Wechat 二维码](./assets/wechat.png) -->
+![Wechat 二维码](./assets/wechat.png)
